@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Help Desk{% endblock %} | Help Desk Ticketing</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="brand">🎫 Help Desk</div>
+    {% if user %}
+    <a href="/" class="nav-link">Dashboard</a>
+    <a href="/tickets" class="nav-link">Tickets</a>
+    <a href="/tickets/new" class="nav-link">New Ticket</a>
+    <a href="/devices" class="nav-link">Device Inventory</a>
+    <a href="/password-resets" class="nav-link">Password Resets</a>
+    {% if user.role in ['team_lead', 'admin'] %}
+    <a href="/provisioning" class="nav-link">Provisioning</a>
+    {% endif %}
+    <a href="/kb" class="nav-link">Knowledge Base</a>
+    <a href="/ad" class="nav-link">Directory Admin</a>
+    {% if user.role in ['team_lead', 'admin'] %}
+    <a href="/audit" class="nav-link">Audit Log</a>
+    {% endif %}
+    <div class="nav-footer">
+      <span class="user-badge">{{ user.display_name }}</span>
+      <span class="role-badge">{{ user.role }}</span>
+      <a href="/logout" class="nav-link logout">Logout</a>
+    </div>
+    {% endif %}
+  </nav>
+  <main class="content">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

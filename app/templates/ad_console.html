@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Directory Admin{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/css/ad.css">
+<div class="ad-header">
+  <div>
+    <h1>Directory Administration</h1>
+    <p class="subtitle">corp.local — users, groups, OUs, and app permissions</p>
+  </div>
+  <div class="ad-stats">
+    <span>{{ stats.active_users }}/{{ stats.users }} users</span>
+    <span>{{ stats.groups }} groups</span>
+    <span>{{ stats.ous }} OUs</span>
+  </div>
+</div>
+
+{% if synced_count is not none %}
+<div class="alert alert-success">Synced roles for {{ synced_count }} users from group mappings.</div>
+{% endif %}
+
+{% if not can_manage %}
+<div class="alert alert-info">Read-only mode. Log in as <strong>admin</strong> to create and edit directory objects.</div>
+{% endif %}
+
+<nav class="ad-tabs">
+  <a href="/ad?tab=users" class="ad-tab {% if tab == 'users' %}active{% endif %}">Users</a>
+  <a href="/ad?tab=groups" class="ad-tab {% if tab == 'groups' %}active{% endif %}">Groups</a>
+  <a href="/ad?tab=ous" class="ad-tab {% if tab == 'ous' %}active{% endif %}">Organizational Units</a>
+  <a href="/ad?tab=permissions" class="ad-tab {% if tab == 'permissions' %}active{% endif %}">Permissions</a>
+</nav>
+
+<div class="ad-layout">
+  <!-- USERS TAB -->
+  {% if tab == 'users' %}
+  <aside class="ad-sidebar">
+    <div class="ad-toolbar">
+      <input type="search" id="user-filter" placeholder="Filter users..." class="ad-search">
+      {% if can_manage %}
+      <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('create-user-panel').classList.toggle('hidden')">+ New User</button>
+      <form method="post" action="/ad/sync-roles" style="display:inline">
+        <button type="submit" class="btn btn-sm" title="Apply group role mappings to all users">Sync Roles</button>
+      </form>
+      {% endif %}
+    </div>
+    <ul class="ad-list" id="user-list">
+      {% for u in users %}
+      <li>
+        <a href="/ad?tab=users&selected={{ u.id }}" class="ad-list-item {% if selected_id == u.id %}selected{% endif %} {% if not u.is_active %}inactive{% endif %}" data-name="{{ u.display_name|lower }} {{ u.email|lower }}">
+          <strong>{{ u.display_name }}</strong>
+          <small>{{ u.ad_sam_account }} · {{ role_labels.get(u.role, u.role) }}</small>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </aside>
+  <section class="ad-main">
+    {% if can_manage %}
+    <div id="create-user-panel" class="panel form-panel hidden">
+      <h2>Create User</h2>
+      <form method="post" action="/ad/users/create" class="ad-form grid-form">
+        <div><label>Display name</label><input name="display_name" required></div>
+        <div><label>Email</label><input name="email" type="email" required></div>
+        <div><label>Username (optional)</label><input name="username"></div>
+        <div><label>Temp password</label><input name="password" value="password"></div>
+        <div><label>Department</label><input name="department"></div>
+        <div><label>Job title</label><input name="job_title"></div>
+        <div><label>App role</label>
+          <select name="role">{% for r in roles %}<option value="{{ r }}">{{ role_labels[r] }}</option>{% endfor %}</select>
+        </div>
+        <div><label>Manager</label>
+          <select name="manager_id"><option value="">— None —</option>
+            {% for m in managers %}<option value="{{ m.id }}">{{ m.display_name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="checkbox-row"><label><input type="checkbox" name="role_sync_from_groups" value="true"> Sync role from groups</label></div>
+        <div class="checkbox-row"><label><input type="checkbox" name="is_active" value="true" checked> Account enabled</label></div>
+        <div class="full-width"><label>Initial groups (comma-separated IDs)</label><input name="group_ids" placeholder="e.g. 1,2"></div>
+        <div class="full-width"><button type="submit" class="btn btn-primary">Create User</button></div>
+      </form>
+    </div>
+    {% endif %}
+
+    <div id="user-detail" class="panel">
+      {% if selected_id %}
+      <p class="loading">Loading user…</p>
+      {% else %}
+      <p class="muted">Select a user from the list or create a new account.</p>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- GROUPS TAB -->
+  {% if tab == 'groups' %}
+  <aside class="ad-sidebar">
+    {% if can_manage %}
+    <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('create-group-panel').classList.toggle('hidden')">+ New Group</button>
+    {% endif %}
+    <ul class="ad-list">
+      {% for g in groups %}
+      <li><a href="/ad?tab=groups&selected={{ g.id }}" class="ad-list-item {% if selected_id == g.id %}selected{% endif %}">
+        <strong>{{ g.name }}</strong>
+        <small>{{ g.members|length }} members · {{ g.group_type }}</small>
+      </a></li>
+      {% endfor %}
+    </ul>
+  </aside>
+  <section class="ad-main">
+    {% if can_manage %}
+    <div id="create-group-panel" class="panel form-panel hidden">
+      <h2>Create Security Group</h2>
+      <form method="post" action="/ad/groups/create" class="ad-form grid-form">
+        <div><label>Group name</label><input name="name" required></div>
+        <div><label>Type</label><select name="group_type"><option value="security">Security</option><option value="distribution">Distribution</option></select></div>
+        <div><label>OU</label><select name="ou_id"><option value="">— Default —</option>{% for ou in ous %}<option value="{{ ou.id }}">{{ ou.name }}</option>{% endfor %}</select></div>
+        <div><label>Mapped app role</label><select name="mapped_role"><option value="">— None —</option>{% for r in roles %}<option value="{{ r }}">{{ role_labels[r] }}</option>{% endfor %}</select></div>
+        <div><label>Role priority</label><input name="role_priority" type="number" value="0" title="Higher wins when user is in multiple groups"></div>
+        <div class="full-width"><label>Description</label><textarea name="description" rows="2"></textarea></div>
+        <div class="full-width"><button type="submit" class="btn btn-primary">Create Group</button></div>
+      </form>
+    </div>
+    {% endif %}
+    <div id="group-detail" class="panel">
+      {% if selected_id %}<p class="loading">Loading group…</p>{% else %}<p class="muted">Select a group to manage members and settings.</p>{% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- OUs TAB -->
+  {% if tab == 'ous' %}
+  <section class="ad-main full-width">
+    <div class="grid-2">
+      <div class="panel">
+        <h2>OU Tree</h2>
+        <div class="ou-tree">{% include "ad_ou_tree.html" %}</div>
+      </div>
+      <div class="panel">
+        {% if can_manage %}
+        <h2>Create Organizational Unit</h2>
+        <form method="post" action="/ad/ous/create" class="ad-form">
+          <label>OU name</label><input name="name" required placeholder="e.g. Contractors">
+          <label>Parent OU</label>
+          <select name="parent_id"><option value="">— Root (under domain) —</option>
+            {% for ou in ous %}<option value="{{ ou.id }}">{{ ou.distinguished_name }}</option>{% endfor %}
+          </select>
+          <button type="submit" class="btn btn-primary">Create OU</button>
+        </form>
+        <hr style="margin:1.5rem 0;border-color:var(--border)">
+        <h3>Delete OU</h3>
+        <form method="post" id="delete-ou-form" class="inline-form">
+          <select name="ou_id" id="delete-ou-select">{% for ou in ous %}<option value="{{ ou.id }}">{{ ou.name }}</option>{% endfor %}</select>
+          <button type="submit" class="btn btn-danger btn-sm" formaction="" onclick="return confirmDeleteOu(event)">Delete</button>
+        </form>
+        {% else %}
+        <p class="muted">OU management requires admin access.</p>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- PERMISSIONS TAB -->
+  {% if tab == 'permissions' %}
+  <aside class="ad-sidebar">
+    <p class="muted small">Select a group to edit app permissions (additive to mapped role).</p>
+    <ul class="ad-list">
+      {% for g in groups %}
+      <li><a href="/ad?tab=permissions&selected={{ g.id }}" class="ad-list-item {% if selected_id == g.id %}selected{% endif %}">{{ g.name }}</a></li>
+      {% endfor %}
+    </ul>
+  </aside>
+  <section class="ad-main">
+    <div id="permissions-panel" class="panel">
+      {% if selected_id and can_manage %}
+      <p class="loading">Loading permissions…</p>
+      {% elif selected_id %}
+      <p class="muted">View-only. Admin can edit group permissions.</p>
+      {% else %}
+      <h2>Permission Matrix</h2>
+      <p class="muted">Groups can grant extra app permissions beyond their mapped role — similar to Azure AD app roles.</p>
+      <table class="data-table perm-matrix">
+        <thead><tr><th>Permission</th>{% for gm in perm_matrix %}<th>{{ gm.name }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for perm in all_permissions %}
+          <tr><td>{{ permission_labels[perm] }}</td>
+            {% for gm in perm_matrix %}
+            <td>{% if perm in gm.perms %}✓{% else %}—{% endif %}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+</div>
+
+<script>window.AD_CONFIG = {{ script_config_json|safe }};</script>
+<script src="/static/js/ad.js"></script>
+{% endblock %}

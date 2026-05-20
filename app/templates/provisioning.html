@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Employee Provisioning{% endblock %}
+{% block content %}
+<h1>Employee Provisioning</h1>
+<p class="muted">End-to-end onboarding: AD account, email, groups, device, and onboarding ticket — in one workflow.</p>
+
+{% if request.query_params.get('success') %}
+<div class="alert alert-success">
+  Provisioning workflow #{{ request.query_params.success }} completed.
+  {% if request.query_params.get('ticket') %}
+  <a href="/tickets/{{ request.query_params.ticket }}">View onboarding ticket →</a>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="grid-2">
+  <section class="panel">
+    <h2>New Employee</h2>
+    <form method="post" action="/provisioning/run" class="ad-form">
+      <div class="grid-form" style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+        <div><label>First name</label><input name="first_name" required></div>
+        <div><label>Last name</label><input name="last_name" required></div>
+        <div><label>Department</label><input name="department" required placeholder="Sales"></div>
+        <div><label>Job title</label><input name="job_title" required></div>
+        <div><label>Start date</label><input name="start_date" type="date"></div>
+        <div><label>Manager</label>
+          <select name="manager_id"><option value="">— None —</option>
+            {% for m in managers %}<option value="{{ m.id }}">{{ m.display_name }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <label>AD group IDs (comma-separated)</label>
+      <input name="group_ids" placeholder="e.g. 1 for Domain Users, 2 for IT-Helpdesk" value="1">
+      <label>Device</label>
+      <select name="device_type">
+        <option value="laptop">Provision new laptop</option>
+        <option value="desktop">Provision new desktop</option>
+      </select>
+      <label>Or assign existing stock device</label>
+      <select name="assign_existing_device_id">
+        <option value="">— Provision new —</option>
+        {% for d in stock_devices %}
+        <option value="{{ d.id }}">{{ d.hostname }} ({{ d.asset_tag }})</option>
+        {% endfor %}
+      </select>
+      <p class="small muted">Auto-generates: username (first.last), email (user@corp.local), temp password Welcome2024!</p>
+      <button type="submit" class="btn btn-primary">Run Provisioning Workflow</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Workflow Steps</h2>
+    <ol class="workflow-steps">
+      <li>Generate username &amp; company email</li>
+      <li>Create AD user &amp; assign security groups</li>
+      <li>Provision or assign device from inventory</li>
+      <li>Create onboarding ticket for IT fulfillment</li>
+      <li>Write audit entries for each step</li>
+    </ol>
+  </section>
+</div>
+
+<h2>Recent Provisioning Runs</h2>
+<table class="data-table">
+  <thead><tr><th>ID</th><th>Employee</th><th>Email</th><th>Status</th><th>Ticket</th><th>Date</th></tr></thead>
+  <tbody>
+    {% for p in requests %}
+    <tr>
+      <td>#{{ p.id }}</td>
+      <td>{{ p.first_name }} {{ p.last_name }}</td>
+      <td>{{ p.generated_email or '—' }}</td>
+      <td><span class="badge status-{{ p.status }}">{{ p.status }}</span></td>
+      <td>{% if p.onboarding_ticket_id %}<a href="/tickets/{{ p.onboarding_ticket_id }}">View</a>{% else %}—{% endif %}</td>
+      <td>{{ p.created_at.strftime('%Y-%m-%d') }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6">No provisioning runs yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

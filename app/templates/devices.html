@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Device Inventory{% endblock %}
+{% block content %}
+<h1>Device Inventory</h1>
+<div class="stats-grid">
+  <div class="stat-card"><span class="stat-label">Total Assets</span><span class="stat-value">{{ stats.total }}</span></div>
+  <div class="stat-card"><span class="stat-label">In Stock</span><span class="stat-value">{{ stats.by_status.get('in_stock', 0) }}</span></div>
+  <div class="stat-card"><span class="stat-label">Deployed</span><span class="stat-value">{{ stats.by_status.get('deployed', 0) }}</span></div>
+  <div class="stat-card"><span class="stat-label">Unassigned Stock</span><span class="stat-value">{{ stats.unassigned }}</span></div>
+</div>
+
+<form method="get" class="search-bar">
+  <input type="text" name="q" value="{{ query }}" placeholder="Search hostname, asset tag, serial...">
+  <select name="status"><option value="">All statuses</option>
+    <option value="in_stock" {% if filter_status=='in_stock' %}selected{% endif %}>In stock</option>
+    <option value="deployed" {% if filter_status=='deployed' %}selected{% endif %}>Deployed</option>
+    <option value="maintenance" {% if filter_status=='maintenance' %}selected{% endif %}>Maintenance</option>
+  </select>
+  <select name="device_type"><option value="">All types</option>
+    <option value="laptop" {% if filter_type=='laptop' %}selected{% endif %}>Laptop</option>
+    <option value="desktop" {% if filter_type=='desktop' %}selected{% endif %}>Desktop</option>
+    <option value="server" {% if filter_type=='server' %}selected{% endif %}>Server</option>
+  </select>
+  <button type="submit" class="btn">Filter</button>
+</form>
+
+{% if can_manage %}
+<details class="panel" style="margin:1rem 0">
+  <summary style="cursor:pointer;font-weight:600">+ Add new device</summary>
+  <form method="post" action="/devices/create" class="ad-form grid-form" style="margin-top:1rem">
+    <div><label>Type</label><select name="device_type" required><option value="laptop">Laptop</option><option value="desktop">Desktop</option><option value="server">Server</option></select></div>
+    <div><label>Hostname (optional)</label><input name="hostname" placeholder="Auto-generated if blank"></div>
+    <div><label>Manufacturer</label><input name="manufacturer"></div>
+    <div><label>Model</label><input name="model"></div>
+    <div><label>Serial</label><input name="serial_number"></div>
+    <div><label>OS</label><input name="os"></div>
+    <div class="full-width"><label>Location</label><input name="location"></div>
+    <div class="full-width"><button type="submit" class="btn btn-primary">Add Device</button></div>
+  </form>
+</details>
+{% endif %}
+
+<table class="data-table">
+  <thead>
+    <tr><th>Hostname</th><th>Asset</th><th>Type</th><th>Status</th><th>Assigned To</th><th>Location</th></tr>
+  </thead>
+  <tbody>
+    {% for d in devices %}
+    <tr>
+      <td><a href="/devices/{{ d.id }}">{{ d.hostname }}</a></td>
+      <td>{{ d.asset_tag }}</td>
+      <td>{{ d.device_type }}</td>
+      <td><span class="badge status-{{ d.status }}">{{ d.status }}</span></td>
+      <td>{{ d.assigned_user.display_name if d.assigned_user else '—' }}</td>
+      <td>{{ d.location or '—' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6">No devices match filters.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

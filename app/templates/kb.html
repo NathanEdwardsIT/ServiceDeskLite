@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Knowledge Base{% endblock %}
+{% block content %}
+<h1>Knowledge Base</h1>
+<form method="get" class="search-bar">
+  <input type="text" name="q" value="{{ query }}" placeholder="Search articles...">
+  <button type="submit" class="btn">Search</button>
+</form>
+<div class="kb-list">
+  {% for article in articles %}
+  <article class="kb-card">
+    <h2>{{ article.title }}</h2>
+    <span class="kb-meta">{{ article.category }} · {{ article.view_count }} views · {{ article.helpful_count }} helpful</span>
+    <p>{{ article.content[:400] }}{% if article.content|length > 400 %}...{% endif %}</p>
+    {% if article.tags %}<p class="tags">{{ article.tags }}</p>{% endif %}
+  </article>
+  {% else %}
+  <p>No articles found.</p>
+  {% endfor %}
+</div>
+{% endblock %}

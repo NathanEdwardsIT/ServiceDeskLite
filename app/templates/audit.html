@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Audit Log{% endblock %}
+{% block content %}
+<h1>Audit Log</h1>
+<p class="muted">Comprehensive system audit — logins, tickets, devices, provisioning, password resets, and directory changes.</p>
+
+<form method="get" class="search-bar">
+  <select name="entity_type">
+    <option value="">All entities</option>
+    <option value="ticket" {% if filter_entity=='ticket' %}selected{% endif %}>Tickets</option>
+    <option value="device" {% if filter_entity=='device' %}selected{% endif %}>Devices</option>
+    <option value="ad_user" {% if filter_entity=='ad_user' %}selected{% endif %}>AD Users</option>
+    <option value="password_reset" {% if filter_entity=='password_reset' %}selected{% endif %}>Password resets</option>
+    <option value="provisioning" {% if filter_entity=='provisioning' %}selected{% endif %}>Provisioning</option>
+    <option value="user" {% if filter_entity=='user' %}selected{% endif %}>Sessions</option>
+  </select>
+  <select name="severity">
+    <option value="">All severities</option>
+    <option value="info" {% if filter_severity=='info' %}selected{% endif %}>Info</option>
+    <option value="warning" {% if filter_severity=='warning' %}selected{% endif %}>Warning</option>
+  </select>
+  <input type="text" name="action" value="{{ filter_action }}" placeholder="Action filter...">
+  <button type="submit" class="btn">Filter</button>
+</form>
+
+<table class="data-table">
+  <thead>
+    <tr><th>Time</th><th>Severity</th><th>Actor</th><th>Action</th><th>Entity</th><th>Summary</th><th>Path</th></tr>
+  </thead>
+  <tbody>
+    {% for log in logs %}
+    <tr class="severity-{{ log.severity }}">
+      <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+      <td><span class="badge">{{ log.severity }}</span></td>
+      <td>{{ log.actor.display_name if log.actor else 'System' }}</td>
+      <td>{{ log.action }}</td>
+      <td>{{ log.entity_type }}{% if log.entity_id %} #{{ log.entity_id }}{% endif %}</td>
+      <td>{{ log.summary or '—' }}</td>
+      <td><code class="small">{{ log.request_path or '' }}</code></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

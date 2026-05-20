@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}{{ ticket.ticket_number }}{% endblock %}
+{% block content %}
+<div class="ticket-header">
+  <h1>{{ ticket.ticket_number }} — {{ ticket.title }}</h1>
+  <div class="badges">
+    <span class="badge">{{ ticket.ticket_type }}</span>
+    <span class="badge priority-{{ ticket.priority }}">{{ ticket.priority }}</span>
+    <span class="badge">impact: {{ ticket.impact }}</span>
+    <span class="badge status-{{ ticket.status }}">{{ ticket.status }}</span>
+    {% if ticket.tags %}<span class="badge">{{ ticket.tags }}</span>{% endif %}
+    {% if sla_display %}
+    <span class="badge sla-{{ sla_display.status }}">SLA: {{ sla_display.label }} ({{ sla_display.percent_remaining }}% left)</span>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid-2">
+  <section class="panel">
+    <h2>Issue Details</h2>
+    <p>{{ ticket.description }}</p>
+    <p><strong>Requester:</strong> {{ ticket.requester.display_name }}</p>
+    <p><strong>Assigned:</strong> {{ ticket.assigned_technician.display_name if ticket.assigned_technician else 'Unassigned' }}</p>
+    {% if ticket.affected_device %}
+    <p><strong>Device:</strong> <a href="/devices/{{ ticket.affected_device.id }}">{{ ticket.affected_device.hostname }}</a></p>
+    {% endif %}
+
+    {% if user.role in ['technician', 'team_lead', 'admin'] %}
+    <h3>Update Status</h3>
+    <form method="post" action="/tickets/{{ ticket.id }}/status" class="inline-form">
+      <select name="new_status">
+        {% for s in statuses %}
+        <option value="{{ s }}" {% if s == ticket.status %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+      <input type="text" name="note" placeholder="Status note">
+      <button type="submit" class="btn">Update</button>
+    </form>
+
+    <h3>Assign Technician</h3>
+    <form method="post" action="/tickets/{{ ticket.id }}/assign" class="inline-form">
+      <select name="technician_id">
+        {% for tech in technicians %}
+        <option value="{{ tech.id }}">{{ tech.display_name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn">Assign</button>
+    </form>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Incident Timeline</h2>
+    <div class="incident-timeline">
+      {% for e in timeline %}
+      <div class="timeline-event timeline-{{ e.event_type }}">
+        <div class="timeline-dot"></div>
+        <div class="timeline-body">
+          <strong>{{ e.title }}</strong>
+          <span class="timeline-meta">{{ e.created_at.strftime('%Y-%m-%d %H:%M') }} · {{ e.actor }}</span>
+          {% if e.description %}<p>{{ e.description }}</p>{% endif %}
+        </div>
+      </div>
+      {% else %}
+      <p class="muted">No timeline events yet.</p>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+
+{% if ticket_audit %}
+<section class="panel">
+  <h2>Audit Trail (this ticket)</h2>
+  <table class="data-table compact">
+    <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Summary</th><th>Severity</th></tr></thead>
+    <tbody>
+      {% for log in ticket_audit %}
+      <tr>
+        <td>{{ log.created_at.strftime('%m/%d %H:%M') }}</td>
+        <td>{{ log.actor.display_name if log.actor else 'System' }}</td>
+        <td>{{ log.action }}</td>
+        <td>{{ log.summary or '—' }}</td>
+        <td>{{ log.severity }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if duplicates %}
+<section class="panel alert-warning">
+  <h2>⚠ Possible Duplicates</h2>
+  <ul>
+    {% for dup, score in duplicates %}
+    <li>
+      <a href="/tickets/{{ dup.id }}">{{ dup.ticket_number }}</a> — {{ dup.title }} ({{ (score * 100)|int }}% match)
+      <form method="post" action="/tickets/{{ ticket.id }}/link-duplicate" style="display:inline">
+        <input type="hidden" name="master_id" value="{{ dup.id }}">
+        <button type="submit" class="btn btn-sm">Mark as duplicate</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if kb_suggestions %}
+<section class="panel">
+  <h2>Knowledge Base Suggestions</h2>
+  <ul>
+    {% for article, score in kb_suggestions %}
+    <li><a href="/kb">{{ article.title }}</a> (relevance {{ (score * 100)|int }}%)</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if device_history %}
+<section class="panel">
+  <h2>Device History</h2>
+  <table class="data-table">
+    <thead><tr><th>Ticket</th><th>Title</th><th>Status</th><th>Date</th></tr></thead>
+    <tbody>
+      {% for t in device_history %}
+      <tr>
+        <td><a href="/tickets/{{ t.id }}">{{ t.ticket_number }}</a></td>
+        <td>{{ t.title }}</td>
+        <td>{{ t.status }}</td>
+        <td>{{ t.created_at.strftime('%Y-%m-%d') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>Work Notes (Technician Documentation)</h2>
+  {% for note in ticket.work_notes %}
+  <div class="work-note">
+    <span class="note-type">{{ note.note_type }}</span>
+    <p>{{ note.content }}</p>
+    <small>{{ note.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+  </div>
+  {% else %}
+  <p>No work notes yet.</p>
+  {% endfor %}
+  {% if user.role in ['technician', 'team_lead', 'admin'] %}
+  <form method="post" action="/tickets/{{ ticket.id }}/work-note">
+    <select name="note_type">
+      <option value="investigation">Investigation</option>
+      <option value="action">Action Taken</option>
+      <option value="escalation">Escalation</option>
+    </select>
+    <textarea name="content" rows="3" required></textarea>
+    <button type="submit" class="btn">Add Work Note</button>
+  </form>
+  {% endif %}
+</section>
+
+{% if ticket.resolution_doc %}
+<section class="panel">
+  <h2>Resolution Documentation</h2>
+  <h3>Root Cause</h3>
+  <p>{{ ticket.resolution_doc.root_cause }}</p>
+  <h3>Resolution Steps</h3>
+  <p>{{ ticket.resolution_doc.resolution_steps }}</p>
+  {% if ticket.resolution_doc.prevention_notes %}
+  <h3>Prevention</h3>
+  <p>{{ ticket.resolution_doc.prevention_notes }}</p>
+  {% endif %}
+</section>
+{% elif user.role in ['technician', 'team_lead', 'admin'] and ticket.status not in ['resolved', 'closed', 'cancelled'] %}
+<section class="panel">
+  <h2>Resolve with Documentation</h2>
+  <form method="post" action="/tickets/{{ ticket.id }}/resolve">
+    <label>Root Cause</label>
+    <textarea name="root_cause" required></textarea>
+    <label>Resolution Steps</label>
+    <textarea name="resolution_steps" required></textarea>
+    <label>Prevention Notes</label>
+    <textarea name="prevention_notes"></textarea>
+    <label>Verification Steps</label>
+    <textarea name="verification_steps"></textarea>
+    <label>Time Spent (minutes)</label>
+    <input type="number" name="time_spent_minutes" value="30">
+    <button type="submit" class="btn btn-primary">Resolve Ticket</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

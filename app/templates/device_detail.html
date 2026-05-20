@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}{{ device.hostname }}{% endblock %}
+{% block content %}
+<h1>{{ device.hostname }}</h1>
+<p class="muted">{{ device.asset_tag }} · {{ device.manufacturer or '' }} {{ device.model or '' }}</p>
+
+<div class="stats-grid">
+  <div class="stat-card"><span class="stat-label">Status</span><span class="stat-value">{{ device.status }}</span></div>
+  <div class="stat-card"><span class="stat-label">Type</span><span class="stat-value">{{ device.device_type }}</span></div>
+  <div class="stat-card"><span class="stat-label">OS</span><span class="stat-value">{{ device.os or '—' }}</span></div>
+  <div class="stat-card"><span class="stat-label">Serial</span><span class="stat-value">{{ device.serial_number or '—' }}</span></div>
+</div>
+
+<div class="grid-2">
+  <section class="panel">
+    <h2>Asset Details</h2>
+    {% if can_manage %}
+    <form method="post" action="/devices/{{ device.id }}/update" class="ad-form">
+      <label>Manufacturer</label><input name="manufacturer" value="{{ device.manufacturer or '' }}">
+      <label>Model</label><input name="model" value="{{ device.model or '' }}">
+      <label>OS</label><input name="os" value="{{ device.os or '' }}">
+      <label>Location</label><input name="location" value="{{ device.location or '' }}">
+      <label>Status</label>
+      <select name="status">
+        <option value="in_stock" {% if device.status=='in_stock' %}selected{% endif %}>In stock</option>
+        <option value="deployed" {% if device.status=='deployed' %}selected{% endif %}>Deployed</option>
+        <option value="maintenance" {% if device.status=='maintenance' %}selected{% endif %}>Maintenance</option>
+      </select>
+      <label>Notes</label><textarea name="notes" rows="3">{{ device.notes or '' }}</textarea>
+      <button type="submit" class="btn btn-primary">Save</button>
+    </form>
+    <form method="post" action="/devices/{{ device.id }}/assign" class="inline-form" style="margin-top:1rem">
+      <select name="user_id">
+        <option value="">— Unassign —</option>
+        {% for u in users %}<option value="{{ u.id }}" {% if device.assigned_user_id==u.id %}selected{% endif %}>{{ u.display_name }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="btn">Assign User</button>
+    </form>
+    <form method="post" action="/devices/{{ device.id }}/retire" style="margin-top:0.5rem" onsubmit="return confirm('Retire this device?')">
+      <button type="submit" class="btn btn-danger btn-sm">Retire Asset</button>
+    </form>
+    {% else %}
+    <dl class="detail-dl">
+      <dt>Assigned</dt><dd>{{ device.assigned_user.display_name if device.assigned_user else 'Unassigned' }}</dd>
+      <dt>Location</dt><dd>{{ device.location or '—' }}</dd>
+      <dt>Notes</dt><dd>{{ device.notes or '—' }}</dd>
+    </dl>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Ticket History</h2>
+    <table class="data-table">
+      <thead><tr><th>Ticket</th><th>Title</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for t in tickets %}
+        <tr>
+          <td><a href="/tickets/{{ t.id }}">{{ t.ticket_number }}</a></td>
+          <td>{{ t.title }}</td>
+          <td>{{ t.status }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3">No tickets for this device.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+
+{% if audit_logs %}
+<section class="panel">
+  <h2>Audit Trail (this device)</h2>
+  <table class="data-table compact">
+    <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Summary</th></tr></thead>
+    <tbody>
+      {% for log in audit_logs %}
+      <tr>
+        <td>{{ log.created_at.strftime('%m/%d %H:%M') }}</td>
+        <td>{{ log.actor.display_name if log.actor else 'System' }}</td>
+        <td>{{ log.action }}</td>
+        <td>{{ log.summary or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

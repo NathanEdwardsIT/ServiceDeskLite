@@ -114,7 +114,7 @@ It is built as a portfolio project to demonstrate practical IT support, systems 
 ## 📦 Installation
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/ServiceDeskLite.git
+git clone https://github.com/NathanEdwardsIT/ServiceDeskLite.git
 cd ServiceDeskLite
 pip install -r requirements.txt
-python main.py
+python run.py

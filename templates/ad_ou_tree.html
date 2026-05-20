@@ -1,0 +1,14 @@
+<ul>
+{% macro render_tree(nodes) %}
+  {% for node in nodes %}
+  <li>
+    <span class="ou-node">{{ node.name }}</span>
+    <code class="ou-dn">{{ node.dn }}</code>
+    {% if node.children %}
+    <ul>{{ render_tree(node.children) }}</ul>
+    {% endif %}
+  </li>
+  {% endfor %}
+{% endmacro %}
+{{ render_tree(ou_tree) }}
+</ul>

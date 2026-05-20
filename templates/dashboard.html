@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Operations Dashboard</h1>
+<div class="stats-grid">
+  <div class="stat-card">
+    <span class="stat-label">Open Tickets</span>
+    <span class="stat-value">{{ stats.total_open }}</span>
+  </div>
+  <div class="stat-card warning">
+    <span class="stat-label">SLA At Risk / Breached</span>
+    <span class="stat-value">{{ stats.sla_at_risk }}</span>
+  </div>
+  {% for status, count in stats.by_status.items() %}
+  <div class="stat-card">
+    <span class="stat-label">{{ status|replace('_', ' ')|title }}</span>
+    <span class="stat-value">{{ count }}</span>
+  </div>
+  {% endfor %}
+</div>
+
+{% if tech_stats %}
+<h2>Technician Performance</h2>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Technician</th>
+      <th>Assigned</th>
+      <th>Resolved</th>
+      <th>Open</th>
+      <th>SLA Met</th>
+      <th>SLA Breached</th>
+      <th>Compliance %</th>
+      <th>Avg Resolution (hrs)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in tech_stats %}
+    <tr>
+      <td>{{ row.technician.display_name }}</td>
+      <td>{{ row.assigned_count }}</td>
+      <td>{{ row.resolved_count }}</td>
+      <td>{{ row.open_count }}</td>
+      <td>{{ row.sla_met }}</td>
+      <td>{{ row.sla_breached }}</td>
+      <td>{{ row.sla_compliance_pct }}%</td>
+      <td>{{ row.avg_resolution_hours or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Recent Tickets</h2>
+<table class="data-table">
+  <thead>
+    <tr><th>#</th><th>Title</th><th>Priority</th><th>Status</th><th>SLA</th></tr>
+  </thead>
+  <tbody>
+    {% for t in recent %}
+    <tr>
+      <td><a href="/tickets/{{ t.id }}">{{ t.ticket_number }}</a></td>
+      <td>{{ t.title }}</td>
+      <td><span class="badge priority-{{ t.priority }}">{{ t.priority }}</span></td>
+      <td><span class="badge status-{{ t.status }}">{{ t.status }}</span></td>
+      <td>{% if t.sla %}<span class="badge sla-{{ t.sla.status }}">{{ t.sla.status }}</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

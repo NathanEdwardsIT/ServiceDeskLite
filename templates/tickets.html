@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Tickets{% endblock %}
+{% block content %}
+<h1>Ticket Queue</h1>
+<a href="/tickets/new" class="btn btn-primary">+ New Ticket</a>
+<table class="data-table" style="margin-top:1rem">
+  <thead>
+    <tr>
+      <th>Number</th><th>Title</th><th>Priority</th><th>Status</th>
+      <th>Assigned</th><th>SLA Timer</th><th>Created</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in tickets %}
+    <tr>
+      <td><a href="/tickets/{{ t.id }}">{{ t.ticket_number }}</a></td>
+      <td>{{ t.title }}</td>
+      <td><span class="badge priority-{{ t.priority }}">{{ t.priority }}</span></td>
+      <td><span class="badge status-{{ t.status }}">{{ t.status }}</span></td>
+      <td>{{ t.assigned_technician.display_name if t.assigned_technician else '—' }}</td>
+      <td>
+        {% if timers.get(t.id) %}
+        <span class="sla-timer sla-{{ timers[t.id].status }}">{{ timers[t.id].label }}</span>
+        {% else %}—{% endif %}
+      </td>
+      <td>{{ t.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7">No tickets found.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

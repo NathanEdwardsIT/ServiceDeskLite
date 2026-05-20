@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ device.hostname }}{% endblock %}
+{% block content %}
+<h1>Device: {{ device.hostname }}</h1>
+<div class="stats-grid">
+  <div class="stat-card"><span class="stat-label">Type</span><span class="stat-value">{{ device.device_type }}</span></div>
+  <div class="stat-card"><span class="stat-label">OS</span><span class="stat-value">{{ device.os or '—' }}</span></div>
+  <div class="stat-card"><span class="stat-label">Total Tickets</span><span class="stat-value">{{ total_tickets }}</span></div>
+  <div class="stat-card"><span class="stat-label">Open Tickets</span><span class="stat-value">{{ open_tickets }}</span></div>
+</div>
+<h2>Ticket History</h2>
+<table class="data-table">
+  <thead><tr><th>Number</th><th>Title</th><th>Status</th><th>Priority</th><th>Created</th></tr></thead>
+  <tbody>
+    {% for t in recent_tickets %}
+    <tr>
+      <td><a href="/tickets/{{ t.id }}">{{ t.ticket_number }}</a></td>
+      <td>{{ t.title }}</td>
+      <td>{{ t.status }}</td>
+      <td>{{ t.priority }}</td>
+      <td>{{ t.created_at.strftime('%Y-%m-%d') }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

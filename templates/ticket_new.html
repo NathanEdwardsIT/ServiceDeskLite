@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}New Ticket{% endblock %}
+{% block content %}
+<h1>Create Ticket</h1>
+<form method="post" class="form-card">
+  <label>Issue Title</label>
+  <input type="text" name="title" required maxlength="255">
+  <label>Description</label>
+  <textarea name="description" rows="6" required></textarea>
+  <label>Priority</label>
+  <select name="priority">
+    <option value="low">Low</option>
+    <option value="medium" selected>Medium</option>
+    <option value="high">High</option>
+    <option value="critical">Critical</option>
+  </select>
+  <label>Category</label>
+  <select name="category">
+    <option value="">— Select —</option>
+    <option value="hardware">Hardware</option>
+    <option value="software">Software</option>
+    <option value="network">Network</option>
+    <option value="access">Access / Account</option>
+    <option value="email">Email</option>
+  </select>
+  <label>Affected Device</label>
+  <select name="affected_device_id">
+    <option value="">— None —</option>
+    {% for d in devices %}
+    <option value="{{ d.id }}">{{ d.hostname }} ({{ d.device_type }})</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-primary">Submit Ticket</button>
+</form>
+{% endblock %}

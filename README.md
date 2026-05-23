@@ -1,6 +1,6 @@
 # Help Desk Ticketing System
 
-A portfolio-ready Python help desk / IT ticketing platform built to demonstrate systems thinking, documentation practices, and common enterprise IT workflows—including an **Active Directory simulation** with a full directory administration console.
+A Python help desk / IT ticketing platform built to demonstrate systems thinking, documentation practices, and common enterprise IT workflows—including an **Active Directory simulation** with a full directory administration console.
 
 ## Screenshots
 

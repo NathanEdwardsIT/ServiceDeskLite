@@ -74,17 +74,6 @@ python migrate_v2.py
 
 You can also log in with AD-style identifiers: `jsmith`, `jsmith@corp.local`.
 
-## Interview Talking Points
-
-1. **ITIL workflow** — Status changes follow validated transitions; invalid moves are rejected with clear errors.
-2. **Priority matrix** — Impact × urgency auto-calculates priority on ticket creation (override optional).
-3. **Kanban queue** — `/tickets?view=kanban` shows live SLA-aware columns for open work.
-4. **REST API** — Integrate with `/api/v1/tickets`; explore schemas at `/docs`.
-5. **Escalation & CSAT** — Escalate tickets (bumps priority + audit trail); requesters rate resolved tickets.
-6. **Directory Admin** — Org chart from manager hierarchy, account lock/unlock, directory audit tab.
-7. **Auto-resolution** — Create *"Forgot password need reset"* as `user1` → script auto-resolves.
-8. **SLA pressure** — Create a **critical** ticket and watch timers on list/Kanban views.
-
 ## Project Structure
 
 ```

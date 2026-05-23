@@ -10,8 +10,10 @@ from app.services.auto_resolve_service import AutoResolveService
 from app.services.documentation_service import DocumentationService
 from app.services.duplicate_service import DuplicateDetectionService
 from app.services.kb_service import KnowledgeBaseService
+from app.services.priority_service import PriorityService
 from app.services.sla_service import SlaService
 from app.services.timeline_service import TimelineService
+from app.services.workflow_service import WorkflowService
 
 
 class TicketService:
@@ -25,6 +27,8 @@ class TicketService:
         self.auto_resolve = AutoResolveService(db)
         self.audit = AuditService(db)
         self.timeline = TimelineService(db)
+        self.workflow = WorkflowService()
+        self.priority = PriorityService()
 
     def _next_ticket_number(self) -> str:
         count = self.db.query(Ticket).count()
@@ -34,7 +38,7 @@ class TicketService:
         self,
         title: str,
         description: str,
-        priority: str,
+        priority: str | None,
         requester_id: int,
         affected_device_id: int | None = None,
         category: str | None = None,
@@ -48,11 +52,13 @@ class TicketService:
         dupes = self.duplicates.find_duplicates(title, description, affected_device_id)
         kb_suggestions = self.kb.suggest_for_ticket(title, description)
 
+        calculated_priority = priority or self.priority.calculate(impact, urgency)
+
         ticket = Ticket(
             ticket_number=self._next_ticket_number(),
             title=title,
             description=description,
-            priority=priority,
+            priority=calculated_priority,
             requester_id=requester_id,
             affected_device_id=affected_device_id,
             category=category,
@@ -73,7 +79,7 @@ class TicketService:
             "Ticket opened",
             f"{ticket.ticket_number}: {title}",
             actor_id or requester_id,
-            {"priority": priority, "type": ticket_type},
+            {"priority": calculated_priority, "type": ticket_type, "impact": impact, "urgency": urgency},
         )
 
         assigned_tech = None
@@ -114,7 +120,7 @@ class TicketService:
             "ticket",
             ticket.id,
             actor_id or requester_id,
-            {"title": title, "priority": priority, "duplicates_found": len(dupes)},
+            {"title": title, "priority": calculated_priority, "duplicates_found": len(dupes)},
             summary=f"Created ticket {ticket.ticket_number}",
         )
         self.db.flush()
@@ -172,8 +178,13 @@ class TicketService:
         new_status: str,
         actor_id: int,
         note: str | None = None,
+        role: str | None = None,
     ) -> Ticket:
         old = ticket.status
+        ok, err = self.workflow.can_transition(old, new_status, role, note)
+        if not ok:
+            raise ValueError(err or "Invalid status transition")
+
         ticket.status = new_status
         ticket.updated_at = datetime.utcnow()
 
@@ -217,6 +228,76 @@ class TicketService:
         )
         self.db.flush()
         self.db.refresh(ticket)
+        return ticket
+
+    def escalate(
+        self,
+        ticket: Ticket,
+        actor_id: int,
+        reason: str,
+    ) -> Ticket:
+        ticket.escalation_level = (ticket.escalation_level or 0) + 1
+        ticket.escalated_at = datetime.utcnow()
+        ticket.updated_at = datetime.utcnow()
+
+        if ticket.priority == "low":
+            ticket.priority = "medium"
+        elif ticket.priority == "medium":
+            ticket.priority = "high"
+        elif ticket.priority == "high":
+            ticket.priority = "critical"
+
+        self.sla.refresh(ticket)
+        self.timeline.add_event(
+            ticket.id,
+            TimelineEventType.ESCALATION,
+            f"Escalated to Level {ticket.escalation_level}",
+            reason,
+            actor_id,
+            {"level": ticket.escalation_level, "new_priority": ticket.priority},
+        )
+        self.audit.log(
+            AuditAction.ESCALATE,
+            "ticket",
+            ticket.id,
+            actor_id,
+            {"level": ticket.escalation_level, "reason": reason},
+            summary=f"{ticket.ticket_number} escalated to L{ticket.escalation_level}",
+            severity="warning",
+        )
+        self.db.flush()
+        self.db.refresh(ticket)
+        return ticket
+
+    def record_satisfaction(
+        self,
+        ticket: Ticket,
+        rating: int,
+        comment: str | None,
+        actor_id: int,
+    ) -> Ticket:
+        if rating < 1 or rating > 5:
+            raise ValueError("Rating must be between 1 and 5")
+        ticket.satisfaction_rating = rating
+        ticket.satisfaction_comment = comment
+        ticket.updated_at = datetime.utcnow()
+        self.timeline.add_event(
+            ticket.id,
+            TimelineEventType.COMMENT,
+            f"Customer satisfaction: {rating}/5",
+            comment,
+            actor_id,
+            {"rating": rating},
+        )
+        self.audit.log(
+            AuditAction.UPDATE,
+            "ticket",
+            ticket.id,
+            actor_id,
+            {"satisfaction_rating": rating},
+            summary=f"{ticket.ticket_number} CSAT {rating}/5",
+        )
+        self.db.flush()
         return ticket
 
     def assign(

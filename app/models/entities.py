@@ -86,6 +86,8 @@ class User(Base):
     manager_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     job_title: Mapped[str | None] = mapped_column(String(128))
     role_sync_from_groups: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime)
+    account_locked: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     manager: Mapped["User | None"] = relationship(remote_side=[id])
@@ -162,6 +164,10 @@ class Ticket(Base):
     )
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    escalation_level: Mapped[int] = mapped_column(Integer, default=0)
+    escalated_at: Mapped[datetime | None] = mapped_column(DateTime)
+    satisfaction_rating: Mapped[int | None] = mapped_column(Integer)
+    satisfaction_comment: Mapped[str | None] = mapped_column(Text)
 
     requester: Mapped["User"] = relationship(
         back_populates="created_tickets", foreign_keys=[requester_id]

@@ -1,58 +1,97 @@
 {% extends "base.html" %}
 {% block title %}New Ticket{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/static/css/tickets.css">{% endblock %}
 {% block content %}
 <h1>Create Ticket</h1>
-<form method="post" class="form-card">
-  <label>Issue Title</label>
-  <input type="text" name="title" required maxlength="255">
-  <label>Description</label>
-  <textarea name="description" rows="6" required></textarea>
-  <label>Ticket type</label>
-  <select name="ticket_type">
-    <option value="incident">Incident</option>
-    <option value="request">Service Request</option>
-    <option value="problem">Problem</option>
-    <option value="change">Change</option>
-  </select>
-  <label>Priority</label>
-  <select name="priority">
-    <option value="low">Low</option>
-    <option value="medium" selected>Medium</option>
-    <option value="high">High</option>
-    <option value="critical">Critical</option>
-  </select>
-  <label>Impact</label>
-  <select name="impact">
-    <option value="low">Low</option>
-    <option value="medium" selected>Medium</option>
-    <option value="high">High</option>
-    <option value="critical">Critical</option>
-  </select>
-  <label>Urgency</label>
-  <select name="urgency">
-    <option value="low">Low</option>
-    <option value="medium" selected>Medium</option>
-    <option value="high">High</option>
-    <option value="critical">Critical</option>
-  </select>
-  <label>Tags (comma-separated)</label>
-  <input type="text" name="tags" placeholder="vpn, email, hardware">
-  <label>Category</label>
-  <select name="category">
-    <option value="">— Select —</option>
-    <option value="hardware">Hardware</option>
-    <option value="software">Software</option>
-    <option value="network">Network</option>
-    <option value="access">Access / Account</option>
-    <option value="email">Email</option>
-  </select>
-  <label>Affected Device</label>
-  <select name="affected_device_id">
-    <option value="">— None —</option>
-    {% for d in devices %}
-    <option value="{{ d.id }}">{{ d.hostname }} ({{ d.device_type }})</option>
+<p class="subtitle">Priority is auto-calculated from impact × urgency (ITIL matrix). Override only if needed.</p>
+
+<div class="grid-2">
+  <form method="post" class="form-card panel">
+    <label>Issue Title</label>
+    <input type="text" name="title" required maxlength="255">
+    <label>Description</label>
+    <textarea name="description" rows="6" required></textarea>
+    <label>Ticket type</label>
+    <select name="ticket_type">
+      <option value="incident">Incident</option>
+      <option value="request">Service Request</option>
+      <option value="problem">Problem</option>
+      <option value="change">Change</option>
+    </select>
+    <label>Impact</label>
+    <select name="impact" id="impact-select">
+      <option value="low">Low — single user, workaround exists</option>
+      <option value="medium" selected>Medium — department affected</option>
+      <option value="high">High — business unit affected</option>
+      <option value="critical">Critical — organization-wide</option>
+    </select>
+    <label>Urgency</label>
+    <select name="urgency" id="urgency-select">
+      <option value="low">Low — can wait days</option>
+      <option value="medium" selected>Medium — needed today</option>
+      <option value="high">High — needed within hours</option>
+      <option value="critical">Critical — immediate</option>
+    </select>
+    <label>Calculated priority</label>
+    <p><span id="priority-preview" class="badge priority-medium">medium</span></p>
+    <label>Override priority (optional)</label>
+    <select name="priority">
+      <option value="">Auto (from matrix)</option>
+      <option value="low">Low</option>
+      <option value="medium">Medium</option>
+      <option value="high">High</option>
+      <option value="critical">Critical</option>
+    </select>
+    <label>Tags (comma-separated)</label>
+    <input type="text" name="tags" placeholder="vpn, email, hardware">
+    <label>Category</label>
+    <select name="category">
+      <option value="">— Select —</option>
+      <option value="hardware">Hardware</option>
+      <option value="software">Software</option>
+      <option value="network">Network</option>
+      <option value="access">Access / Account</option>
+      <option value="email">Email</option>
+    </select>
+    <label>Affected Device</label>
+    <select name="affected_device_id">
+      <option value="">— None —</option>
+      {% for d in devices %}
+      <option value="{{ d.id }}">{{ d.hostname }} ({{ d.device_type }})</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-primary">Submit Ticket</button>
+  </form>
+
+  <div class="panel">
+    <h2>Priority Matrix</h2>
+    <p class="muted small">Standard ITIL impact × urgency → priority mapping</p>
+    <table class="data-table priority-matrix">
+      <thead>
+        <tr><th>Impact ↓ / Urgency →</th><th>Low</th><th>Medium</th><th>High</th><th>Critical</th></tr>
+      </thead>
+      <tbody>
+        {% for row in priority_matrix %}
+        <tr>
+          <th>{{ row.impact|capitalize }}</th>
+          {% for cell in row.cells %}
+          <td class="{{ cell.priority }}"><span class="badge priority-{{ cell.priority }}">{{ cell.priority }}</span></td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+window.PRIORITY_MATRIX = {
+  {% for row in priority_matrix %}
+    {% for cell in row.cells %}
+  "{{ cell.impact }}:{{ cell.urgency }}": "{{ cell.priority }}",
     {% endfor %}
-  </select>
-  <button type="submit" class="btn btn-primary">Submit Ticket</button>
-</form>
+  {% endfor %}
+};
+</script>
+<script src="/static/js/tickets.js"></script>
 {% endblock %}

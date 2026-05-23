@@ -383,6 +383,8 @@ class ADManagementService:
             "role_sync_from_groups": user.role_sync_from_groups,
             "manager": user.manager.display_name if user.manager else None,
             "manager_id": user.manager_id,
+            "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+            "account_locked": getattr(user, "account_locked", False),
             "groups": [{"id": g.id, "name": g.name} for g in user.ad_groups],
             "effective_permissions": sorted(get_user_permissions(user)),
         }
@@ -407,6 +409,155 @@ class ADManagementService:
         return {
             "users": self.db.query(User).count(),
             "active_users": self.db.query(User).filter(User.is_active.is_(True)).count(),
+            "disabled_users": self.db.query(User).filter(User.is_active.is_(False)).count(),
+            "locked_accounts": self.db.query(User).filter(User.account_locked.is_(True)).count(),
             "groups": self.db.query(ADGroup).count(),
             "ous": self.db.query(ADOrganizationalUnit).count(),
+            "departments": self.db.query(User.department).filter(User.department.isnot(None)).distinct().count(),
         }
+
+    def department_breakdown(self) -> list[dict]:
+        from sqlalchemy import func
+
+        rows = (
+            self.db.query(User.department, func.count(User.id))
+            .filter(User.department.isnot(None), User.is_active.is_(True))
+            .group_by(User.department)
+            .order_by(func.count(User.id).desc())
+            .all()
+        )
+        return [{"department": d or "Unknown", "count": c} for d, c in rows]
+
+    def get_org_chart(self, root_id: int | None = None) -> dict[str, Any]:
+        """Build org hierarchy from manager_id relationships."""
+        users = (
+            self.db.query(User)
+            .options(joinedload(User.ad_groups))
+            .filter(User.is_active.is_(True))
+            .all()
+        )
+        by_id = {u.id: u for u in users}
+        children_map: dict[int | None, list[User]] = {}
+        for u in users:
+            mid = u.manager_id if u.manager_id in by_id else None
+            children_map.setdefault(mid, []).append(u)
+
+        def node(user: User) -> dict:
+            kids = sorted(children_map.get(user.id, []), key=lambda x: x.display_name)
+            return {
+                "id": user.id,
+                "name": user.display_name,
+                "title": user.job_title or user.role,
+                "department": user.department,
+                "email": user.email,
+                "role": user.role,
+                "group_count": len(user.ad_groups),
+                "children": [node(c) for c in kids],
+            }
+
+        if root_id and root_id in by_id:
+            return node(by_id[root_id])
+
+        roots = sorted(children_map.get(None, []), key=lambda x: x.display_name)
+        # Users whose manager is inactive/missing also appear at root
+        for u in users:
+            if u.manager_id and u.manager_id not in by_id and u not in roots:
+                roots.append(u)
+        return {
+            "roots": [node(r) for r in roots],
+            "total_nodes": len(users),
+        }
+
+    def bulk_set_active(self, user_ids: list[int], is_active: bool) -> int:
+        count = 0
+        for uid in user_ids:
+            user = self.get_user(uid)
+            if user:
+                user.is_active = is_active
+                count += 1
+        self.db.flush()
+        return count
+
+    def bulk_add_to_group(self, user_ids: list[int], group_id: int) -> int:
+        count = 0
+        for uid in user_ids:
+            try:
+                self.add_user_to_group(uid, group_id)
+                count += 1
+            except ValueError:
+                continue
+        return count
+
+    def bulk_sync_roles(self, user_ids: list[int]) -> int:
+        count = 0
+        for uid in user_ids:
+            user = self.get_user(uid)
+            if user and user.role_sync_from_groups:
+                self.sync_user_role(user)
+                count += 1
+        self.db.flush()
+        return count
+
+    def set_account_locked(self, user_id: int, locked: bool) -> User:
+        user = self.get_user(user_id)
+        if not user:
+            raise ValueError("User not found")
+        user.account_locked = locked
+        self.db.flush()
+        return user
+
+    def advanced_search(
+        self,
+        query: str | None = None,
+        department: str | None = None,
+        role: str | None = None,
+        group_id: int | None = None,
+        active_only: bool = True,
+        locked_only: bool = False,
+        limit: int = 50,
+    ) -> list[User]:
+        q = self.db.query(User).options(
+            joinedload(User.ad_groups),
+            joinedload(User.manager),
+        )
+        if active_only:
+            q = q.filter(User.is_active.is_(True))
+        if locked_only:
+            q = q.filter(User.account_locked.is_(True))
+        if query:
+            pattern = f"%{query}%"
+            q = q.filter(
+                (User.display_name.ilike(pattern))
+                | (User.username.ilike(pattern))
+                | (User.email.ilike(pattern))
+                | (User.ad_sam_account.ilike(pattern))
+                | (User.job_title.ilike(pattern))
+            )
+        if department:
+            q = q.filter(User.department.ilike(f"%{department}%"))
+        if role:
+            q = q.filter(User.role == role)
+        users = q.order_by(User.display_name).limit(limit).all()
+        if group_id:
+            users = [u for u in users if any(g.id == group_id for g in u.ad_groups)]
+        return users
+
+    def get_ad_audit_logs(self, limit: int = 100) -> list:
+        from app.models.entities import AuditLog
+
+        return (
+            self.db.query(AuditLog)
+            .options(joinedload(AuditLog.actor))
+            .filter(AuditLog.entity_type.in_(("ad_user", "ad_group", "ad_ou", "ad_directory")))
+            .order_by(AuditLog.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+    def ou_user_counts(self) -> dict[int, int]:
+        """Count users per OU via group membership."""
+        counts: dict[int, int] = {}
+        for group in self.list_groups():
+            if group.ou_id:
+                counts[group.ou_id] = counts.get(group.ou_id, 0) + len(group.members)
+        return counts

@@ -1,33 +1,139 @@
 {% extends "base.html" %}
 {% block title %}Tickets{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/static/css/tickets.css">{% endblock %}
 {% block content %}
-<h1>Ticket Queue</h1>
-<a href="/tickets/new" class="btn btn-primary">+ New Ticket</a>
-<table class="data-table" style="margin-top:1rem">
+<div class="tickets-header">
+  <div>
+    <h1>Ticket Operations Center</h1>
+    <p class="subtitle">ITIL workflow · SLA tracking · Kanban queue management</p>
+  </div>
+  <div class="tickets-actions">
+    <a href="/tickets/new" class="btn btn-primary">+ New Ticket</a>
+    <a href="/tickets?view=list" class="btn btn-sm {% if view != 'kanban' %}active-view{% endif %}">List</a>
+    <a href="/tickets?view=kanban" class="btn btn-sm {% if view == 'kanban' %}active-view{% endif %}">Kanban</a>
+    <a href="/docs#/Tickets%20API" class="btn btn-sm" target="_blank">API Docs</a>
+  </div>
+</div>
+
+<div class="stats-grid queue-stats">
+  <div class="stat-card"><span class="stat-label">Open Queue</span><span class="stat-value">{{ stats.total_open }}</span></div>
+  <div class="stat-card {% if stats.breached_sla %}warning{% endif %}"><span class="stat-label">SLA Breached</span><span class="stat-value">{{ stats.breached_sla }}</span></div>
+  <div class="stat-card"><span class="stat-label">Escalated</span><span class="stat-value">{{ stats.escalated }}</span></div>
+  <div class="stat-card"><span class="stat-label">Unassigned</span><span class="stat-value">{{ stats.unassigned }}</span></div>
+</div>
+
+{% if view != 'kanban' %}
+<form method="get" class="ticket-filters panel">
+  <input type="hidden" name="view" value="list">
+  <div class="filter-row">
+    <input type="search" name="q" value="{{ filters.q }}" placeholder="Search tickets, numbers, tags…">
+    <select name="status">
+      <option value="">All statuses</option>
+      {% for s in ['new','open','in_progress','pending','resolved','closed','cancelled'] %}
+      <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s|replace('_',' ') }}</option>
+      {% endfor %}
+    </select>
+    <select name="priority">
+      <option value="">All priorities</option>
+      {% for p in ['critical','high','medium','low'] %}
+      <option value="{{ p }}" {% if filters.priority == p %}selected{% endif %}>{{ p }}</option>
+      {% endfor %}
+    </select>
+    <select name="ticket_type">
+      <option value="">All types</option>
+      {% for t in ['incident','request','problem','onboarding','change'] %}
+      <option value="{{ t }}" {% if filters.ticket_type == t %}selected{% endif %}>{{ t }}</option>
+      {% endfor %}
+    </select>
+    {% if can_assign %}
+    <select name="assigned_to">
+      <option value="">All assignees</option>
+      {% for tech in technicians %}
+      <option value="{{ tech.id }}" {% if filters.assigned_to == tech.id|string %}selected{% endif %}>{{ tech.name }} ({{ tech.open_count }})</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+    <select name="sort">
+      <option value="newest" {% if filters.sort == 'newest' %}selected{% endif %}>Newest first</option>
+      <option value="oldest" {% if filters.sort == 'oldest' %}selected{% endif %}>Oldest first</option>
+      <option value="priority" {% if filters.sort == 'priority' %}selected{% endif %}>Priority</option>
+    </select>
+    <label class="checkbox-inline"><input type="checkbox" name="escalated_only" value="true" {% if filters.escalated_only %}checked{% endif %}> Escalated only</label>
+    <button type="submit" class="btn btn-primary">Apply Filters</button>
+    <a href="/tickets" class="btn btn-sm">Clear</a>
+  </div>
+</form>
+
+<table class="data-table ticket-table" style="margin-top:1rem">
   <thead>
     <tr>
-      <th>Number</th><th>Title</th><th>Priority</th><th>Status</th>
-      <th>Assigned</th><th>SLA Timer</th><th>Created</th>
+      <th>Number</th><th>Title</th><th>Type</th><th>Priority</th><th>Status</th>
+      <th>Assigned</th><th>SLA</th><th>Esc</th><th>Created</th>
     </tr>
   </thead>
   <tbody>
     {% for t in tickets %}
-    <tr>
+    <tr class="{% if t.escalation_level %}escalated-row{% endif %}">
       <td><a href="/tickets/{{ t.id }}">{{ t.ticket_number }}</a></td>
-      <td>{{ t.title }}</td>
+      <td>{{ t.title[:60] }}{% if t.title|length > 60 %}…{% endif %}</td>
+      <td><span class="badge">{{ t.ticket_type }}</span></td>
       <td><span class="badge priority-{{ t.priority }}">{{ t.priority }}</span></td>
-      <td><span class="badge status-{{ t.status }}">{{ t.status }}</span></td>
+      <td><span class="badge status-{{ t.status }}">{{ t.status|replace('_',' ') }}</span></td>
       <td>{{ t.assigned_technician.display_name if t.assigned_technician else '—' }}</td>
       <td>
         {% if timers.get(t.id) %}
         <span class="sla-timer sla-{{ timers[t.id].status }}">{{ timers[t.id].label }}</span>
         {% else %}—{% endif %}
       </td>
+      <td>{% if t.escalation_level %}L{{ t.escalation_level }}{% else %}—{% endif %}</td>
       <td>{{ t.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="7">No tickets found.</td></tr>
+    <tr><td colspan="9">No tickets match your filters.</td></tr>
     {% endfor %}
   </tbody>
 </table>
+
+{% if pagination.pages > 1 %}
+<nav class="pagination">
+  {% if pagination.page > 1 %}
+  <a href="?view=list&q={{ filters.q }}&status={{ filters.status }}&priority={{ filters.priority }}&page={{ pagination.page - 1 }}" class="btn btn-sm">Prev</a>
+  {% endif %}
+  <span class="page-info">Page {{ pagination.page }} of {{ pagination.pages }} ({{ pagination.total }} tickets)</span>
+  {% if pagination.page < pagination.pages %}
+  <a href="?view=list&q={{ filters.q }}&status={{ filters.status }}&priority={{ filters.priority }}&page={{ pagination.page + 1 }}" class="btn btn-sm">Next</a>
+  {% endif %}
+</nav>
+{% endif %}
+
+{% else %}
+<div class="kanban-board" id="kanban-board">
+  {% for col in kanban.columns %}
+  <div class="kanban-column" data-status="{{ col.id }}">
+    <div class="kanban-header" style="border-top-color: {{ col.color }}">
+      <strong>{{ col.label }}</strong>
+      <span class="kanban-count">{{ kanban.board[col.id]|length }}</span>
+    </div>
+    <div class="kanban-cards">
+      {% for card in kanban.board[col.id] %}
+      <a href="/tickets/{{ card.id }}" class="kanban-card priority-{{ card.priority }}">
+<div class="kanban-card-top">
+          <span class="kanban-num">{{ card.number }}</span>
+          {% if card.escalation_level %}<span class="esc-badge">L{{ card.escalation_level }}</span>{% endif %}
+        </div>
+<div class="kanban-title">{{ card.title[:80] }}</div>
+        <div class="kanban-meta">
+          <span class="badge priority-{{ card.priority }}">{{ card.priority }}</span>
+          {% if card.sla %}<span class="sla-timer sla-{{ card.sla.status }}">{{ card.sla.label }}</span>{% endif %}
+        </div>
+        <small>{{ card.assigned or 'Unassigned' }}</small>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<script src="/static/js/tickets.js"></script>
 {% endblock %}

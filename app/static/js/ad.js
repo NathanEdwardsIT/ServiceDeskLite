@@ -64,7 +64,7 @@
       el.innerHTML = `
         <div class="detail-header">
           <h2>${esc(u.display_name)} ${u.is_active ? "" : '<span class="badge status-cancelled">Disabled</span>'}</h2>
-          <p class="muted">${esc(u.upn)} · SAM: ${esc(u.sam)}</p>
+          <p class="muted">${esc(u.upn)} · SAM: ${esc(u.sam)}${u.account_locked ? ' · <span class="badge status-cancelled">Locked</span>' : ''}${u.last_login_at ? ' · Last login: ' + esc(u.last_login_at) : ''}</p>
         </div>
         ${canManage ? `
         <form method="post" action="/ad/users/${u.id}/update" class="ad-form grid-form">
@@ -81,6 +81,10 @@
         <form method="post" action="/ad/users/${u.id}/reset-password" class="ad-form inline-row">
           <input name="new_password" placeholder="New password" required>
           <button type="submit" class="btn btn-sm">Reset Password</button>
+        </form>
+        <form method="post" action="/ad/users/${u.id}/lock" class="ad-form inline-row">
+          <input type="hidden" name="locked" value="${u.account_locked ? "false" : "true"}">
+          <button type="submit" class="btn btn-sm ${u.account_locked ? "" : "btn-danger"}">${u.account_locked ? "Unlock Account" : "Lock Account"}</button>
         </form>` : `
         <dl class="detail-dl">
           <dt>Email</dt><dd>${esc(u.email)}</dd>
@@ -185,5 +189,30 @@
     if (cfg.tab === "users") loadUserDetail(cfg.selectedId);
     if (cfg.tab === "groups") loadGroupDetail(cfg.selectedId);
     if (cfg.tab === "permissions") loadPermissionsEditor(cfg.selectedId);
+  }
+
+  function renderOrgNode(node, depth = 0) {
+    const kids = (node.children || [])
+      .map((c) => renderOrgNode(c, depth + 1))
+      .join("");
+    return `
+      <div class="org-node" style="margin-left:${depth * 1.25}rem">
+        <a href="/ad?tab=users&selected=${node.id}" class="org-card">
+          <strong>${esc(node.name)}</strong>
+          <small>${esc(node.title || "")}${node.department ? " · " + esc(node.department) : ""}</small>
+        </a>
+        ${kids}
+      </div>`;
+  }
+
+  const orgRoot = document.getElementById("org-chart-root");
+  if (orgRoot && window.ORG_CHART) {
+    const data = window.ORG_CHART;
+    const roots = data.roots || [];
+    if (!roots.length) {
+      orgRoot.innerHTML = "<p class='muted'>No org hierarchy — assign managers to users to build the chart.</p>";
+    } else {
+      orgRoot.innerHTML = `<p class="muted small">${data.total_nodes} users in hierarchy</p>` + roots.map((r) => renderOrgNode(r)).join("");
+    }
   }
 })();

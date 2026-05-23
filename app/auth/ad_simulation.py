@@ -60,10 +60,16 @@ class ActiveDirectorySimulator:
         )
         if not user:
             return None
+        if getattr(user, "account_locked", False):
+            return None
         from app.auth.passwords import verify_password
 
         if not verify_password(password, user.password_hash):
             return None
+        from datetime import datetime
+
+        user.last_login_at = datetime.utcnow()
+        self.db.flush()
         return user
 
     def sync_role_from_groups(self, user: User) -> str:

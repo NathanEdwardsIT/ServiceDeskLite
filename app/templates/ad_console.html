@@ -8,9 +8,10 @@
     <p class="subtitle">corp.local — users, groups, OUs, and app permissions</p>
   </div>
   <div class="ad-stats">
-    <span>{{ stats.active_users }}/{{ stats.users }} users</span>
+    <span>{{ stats.active_users }}/{{ stats.users }} active</span>
     <span>{{ stats.groups }} groups</span>
     <span>{{ stats.ous }} OUs</span>
+    {% if stats.locked_accounts %}<span class="stat-warn">{{ stats.locked_accounts }} locked</span>{% endif %}
   </div>
 </div>
 
@@ -27,6 +28,8 @@
   <a href="/ad?tab=groups" class="ad-tab {% if tab == 'groups' %}active{% endif %}">Groups</a>
   <a href="/ad?tab=ous" class="ad-tab {% if tab == 'ous' %}active{% endif %}">Organizational Units</a>
   <a href="/ad?tab=permissions" class="ad-tab {% if tab == 'permissions' %}active{% endif %}">Permissions</a>
+  <a href="/ad?tab=orgchart" class="ad-tab {% if tab == 'orgchart' %}active{% endif %}">Org Chart</a>
+  <a href="/ad?tab=audit" class="ad-tab {% if tab == 'audit' %}active{% endif %}">Directory Audit</a>
 </nav>
 
 <div class="ad-layout">
@@ -196,6 +199,57 @@
   {% endif %}
 </div>
 
+  <!-- ORG CHART TAB -->
+  {% if tab == 'orgchart' %}
+  <section class="ad-main full-width">
+    <div class="grid-2">
+      <div class="panel">
+        <h2>Organization Chart</h2>
+        <p class="muted small">Hierarchy derived from manager relationships in corp.local</p>
+        <div id="org-chart-root" class="org-chart"></div>
+      </div>
+      <div class="panel">
+        <h2>By Department</h2>
+        <ul class="dept-list">
+          {% for d in departments %}
+          <li><span>{{ d.department }}</span><strong>{{ d.count }}</strong></li>
+          {% else %}
+          <li class="muted">No departments configured</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- DIRECTORY AUDIT TAB -->
+  {% if tab == 'audit' %}
+  <section class="ad-main full-width">
+    <div class="panel">
+      <h2>Directory Change Audit Trail</h2>
+      <p class="muted">All AD user, group, and OU modifications</p>
+      <table class="data-table compact">
+        <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Entity</th><th>Summary</th><th>Severity</th></tr></thead>
+        <tbody>
+          {% for log in ad_audit %}
+          <tr>
+            <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td>{{ log.actor.display_name if log.actor else 'System' }}</td>
+            <td>{{ log.action }}</td>
+            <td>{{ log.entity_type }}{% if log.entity_id %} #{{ log.entity_id }}{% endif %}</td>
+            <td>{{ log.summary or '—' }}</td>
+            <td><span class="badge severity-{{ log.severity }}">{{ log.severity }}</span></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6">No directory audit events yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
 <script>window.AD_CONFIG = {{ script_config_json|safe }};</script>
+<script>window.ORG_CHART = {{ org_chart_json|safe }};</script>
 <script src="/static/js/ad.js"></script>
 {% endblock %}

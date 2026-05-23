@@ -8,12 +8,12 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.auth.ad_simulation import ActiveDirectorySimulator
-from app.auth.rbac import has_permission
+from app.auth.rbac import has_permission, user_has_permission
 from app.config import settings
 from app.database import get_db, init_db
 from app.dependencies import require_login
 from app.models.entities import Device, KBArticle, Ticket, User
-from app.routes import ad_router, devices_router, ops_router
+from app.routes import ad_router, devices_router, ops_router, tickets_api_router
 from app.services.timeline_service import TimelineService
 from app.models.enums import TimelineEventType
 from app.models.enums import AuditAction, TicketStatus
@@ -23,7 +23,10 @@ from app.services.documentation_service import DocumentationService
 from app.services.kb_service import KnowledgeBaseService
 from app.services.performance_service import PerformanceService
 from app.services.sla_service import SlaService
+from app.services.priority_service import PriorityService
+from app.services.ticket_queue_service import TicketQueueService
 from app.services.ticket_service import TicketService
+from app.services.workflow_service import WorkflowService
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -50,6 +53,7 @@ app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)
 app.include_router(ad_router)
 app.include_router(devices_router)
 app.include_router(ops_router)
+app.include_router(tickets_api_router)
 
 
 @app.on_event("startup")
@@ -138,23 +142,72 @@ def dashboard(request: Request, user: User = Depends(require_login), db: Session
 
 
 @app.get("/tickets", response_class=HTMLResponse)
-def tickets_list(request: Request, user: User = Depends(require_login), db: Session = Depends(get_db)):
-    svc = TicketService(db)
-    if has_permission(user.role, "ticket:view_all"):
-        tickets = svc.list_tickets()
-    else:
-        tickets = [t for t in svc.list_tickets() if t.requester_id == user.id or t.assigned_technician_id == user.id]
+def tickets_list(
+    request: Request,
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+    q: str = "",
+    status: str = "",
+    priority: str = "",
+    ticket_type: str = "",
+    category: str = "",
+    assigned_to: str = "",
+    escalated_only: bool = False,
+    sort: str = "newest",
+    page: int = 1,
+    view: str = "list",
+):
+    view_all = user_has_permission(user, "ticket:view_all")
+    queue = TicketQueueService(db)
+    result = queue.search_tickets(
+        query=q or None,
+        status=status or None,
+        priority=priority or None,
+        ticket_type=ticket_type or None,
+        category=category or None,
+        assigned_to=int(assigned_to) if assigned_to.isdigit() else None,
+        escalated_only=escalated_only,
+        sort=sort,
+        page=page,
+        per_page=25,
+        user_scope=(user.id, view_all),
+    )
+    tickets = result["items"]
     sla_svc = SlaService(db)
     timers = {}
     for t in tickets:
         if t.sla:
             sla_svc.refresh(t)
             timers[t.id] = sla_svc.format_timer_display(t.sla)
+    stats = queue.queue_stats(tickets if not view_all else None)
+    technicians = queue.technician_workload() if view_all else []
+    kanban = queue.kanban_board((user.id, view_all)) if view == "kanban" else None
     db.commit()
     return templates.TemplateResponse(
         request,
         "tickets.html",
-        {"user": user, "tickets": tickets, "timers": timers},
+        {
+            "user": user,
+            "tickets": tickets,
+            "timers": timers,
+            "stats": stats,
+            "technicians": technicians,
+            "pagination": result,
+            "filters": {
+                "q": q,
+                "status": status,
+                "priority": priority,
+                "ticket_type": ticket_type,
+                "category": category,
+                "assigned_to": assigned_to,
+                "escalated_only": escalated_only,
+                "sort": sort,
+            },
+            "view": view,
+            "kanban": kanban,
+            "can_assign": user_has_permission(user, "ticket:assign"),
+            "can_update": user_has_permission(user, "ticket:update"),
+        },
     )
 
 
@@ -164,7 +217,11 @@ def new_ticket_form(request: Request, user: User = Depends(require_login), db: S
     return templates.TemplateResponse(
         request,
         "ticket_new.html",
-        {"user": user, "devices": devices},
+        {
+            "user": user,
+            "devices": devices,
+            "priority_matrix": PriorityService.matrix_rows(),
+        },
     )
 
 
@@ -175,7 +232,7 @@ def create_ticket(
     db: Session = Depends(get_db),
     title: str = Form(...),
     description: str = Form(...),
-    priority: str = Form("medium"),
+    priority: str = Form(""),
     affected_device_id: int | None = Form(None),
     category: str | None = Form(None),
     ticket_type: str = Form("incident"),
@@ -187,7 +244,7 @@ def create_ticket(
     result = TicketService(db).create_ticket(
         title=title,
         description=description,
-        priority=priority,
+        priority=priority if priority else None,
         requester_id=user.id,
         affected_device_id=device_id,
         category=category,
@@ -214,9 +271,13 @@ def ticket_detail(
         raise HTTPException(404, "Ticket not found")
     from app.auth.rbac import can_view_ticket
 
-    if not can_view_ticket(user.role, user.id, ticket.requester_id, ticket.assigned_technician_id):
+    if not can_view_ticket(
+        user.role, user.id, ticket.requester_id, ticket.assigned_technician_id, user=user
+    ):
         raise HTTPException(403, "Access denied")
 
+    svc = TicketService(db)
+    wf = WorkflowService()
     sla_display = None
     if ticket.sla:
         sla_display = SlaService(db).format_timer_display(SlaService(db).refresh(ticket))
@@ -226,12 +287,13 @@ def ticket_detail(
         device_history = DeviceService(db).get_history(ticket.affected_device_id)
 
     kb_suggestions = KnowledgeBaseService(db).suggest_for_ticket(ticket.title, ticket.description)
-    dupes = TicketService(db).duplicates.find_duplicates(
+    dupes = svc.duplicates.find_duplicates(
         ticket.title, ticket.description, ticket.affected_device_id, exclude_ticket_id=ticket.id
     )
-    technicians = TicketService(db).assignment.get_available_technicians()
+    technicians = svc.assignment.get_available_technicians()
     timeline = TimelineService(db).get_timeline(ticket_id)
     ticket_audit = AuditService(db, request).get_for_entity("ticket", ticket_id)
+    allowed_statuses = wf.allowed_transitions(ticket.status, user.role)
     db.commit()
 
     return templates.TemplateResponse(
@@ -245,27 +307,78 @@ def ticket_detail(
             "kb_suggestions": kb_suggestions,
             "duplicates": dupes,
             "technicians": technicians,
-            "statuses": [s.value for s in TicketStatus],
+            "allowed_statuses": allowed_statuses,
+            "current_status": ticket.status,
             "timeline": timeline,
             "ticket_audit": ticket_audit[:15],
+            "can_update": user_has_permission(user, "ticket:update"),
+            "can_assign": user_has_permission(user, "ticket:assign"),
+            "can_resolve": user_has_permission(user, "ticket:resolve"),
+            "can_work_note": user_has_permission(user, "ticket:work_note"),
+            "can_escalate": user_has_permission(user, "ticket:update"),
+            "is_requester": ticket.requester_id == user.id,
         },
     )
 
 
 @app.post("/tickets/{ticket_id}/status")
 def update_status(
+    request: Request,
     ticket_id: int,
     new_status: str = Form(...),
     note: str = Form(""),
     user: User = Depends(require_login),
     db: Session = Depends(get_db),
 ):
-    if not has_permission(user.role, "ticket:update"):
+    if not user_has_permission(user, "ticket:update"):
         raise HTTPException(403)
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not ticket:
         raise HTTPException(404)
-    TicketService(db).update_status(ticket, new_status, user.id, note or None)
+    try:
+        TicketService(db).update_status(ticket, new_status, user.id, note or None, user.role)
+    except ValueError as e:
+        return templates.TemplateResponse(
+            request,
+            "error.html",
+            {"user": user, "message": str(e), "back_url": f"/tickets/{ticket_id}"},
+            status_code=400,
+        )
+    db.commit()
+    return RedirectResponse(f"/tickets/{ticket_id}", status_code=303)
+
+
+@app.post("/tickets/{ticket_id}/escalate")
+def escalate_ticket(
+    ticket_id: int,
+    reason: str = Form(...),
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    if not user_has_permission(user, "ticket:update"):
+        raise HTTPException(403)
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(404)
+    TicketService(db).escalate(ticket, user.id, reason)
+    db.commit()
+    return RedirectResponse(f"/tickets/{ticket_id}", status_code=303)
+
+
+@app.post("/tickets/{ticket_id}/satisfaction")
+def ticket_satisfaction(
+    ticket_id: int,
+    rating: int = Form(...),
+    comment: str = Form(""),
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(404)
+    if ticket.requester_id != user.id and not user_has_permission(user, "ticket:view_all"):
+        raise HTTPException(403)
+    TicketService(db).record_satisfaction(ticket, rating, comment or None, user.id)
     db.commit()
     return RedirectResponse(f"/tickets/{ticket_id}", status_code=303)
 
@@ -277,7 +390,7 @@ def assign_ticket(
     user: User = Depends(require_login),
     db: Session = Depends(get_db),
 ):
-    if not has_permission(user.role, "ticket:assign"):
+    if not user_has_permission(user, "ticket:assign"):
         raise HTTPException(403)
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     TicketService(db).assign(ticket, technician_id, user.id)
@@ -294,7 +407,7 @@ def add_work_note(
     user: User = Depends(require_login),
     db: Session = Depends(get_db),
 ):
-    if not has_permission(user.role, "ticket:work_note"):
+    if not user_has_permission(user, "ticket:work_note"):
         raise HTTPException(403)
     DocumentationService(db).add_work_note(ticket_id, user.id, content, note_type)
     TimelineService(db).add_event(
@@ -319,7 +432,7 @@ def resolve_ticket(
     user: User = Depends(require_login),
     db: Session = Depends(get_db),
 ):
-    if not has_permission(user.role, "ticket:resolve"):
+    if not user_has_permission(user, "ticket:resolve"):
         raise HTTPException(403)
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     DocumentationService(db).create_resolution_doc(

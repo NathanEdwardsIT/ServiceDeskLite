@@ -95,7 +95,19 @@ def user_has_permission(user: User, permission: str) -> bool:
     return permission in get_user_permissions(user)
 
 
-def can_view_ticket(role: str, user_id: int, ticket_requester_id: int, assigned_id: int | None) -> bool:
+def can_view_ticket(
+    role: str,
+    user_id: int,
+    ticket_requester_id: int,
+    assigned_id: int | None,
+    user: User | None = None,
+) -> bool:
+    if user is not None:
+        if user_has_permission(user, "ticket:view_all"):
+            return True
+        if user_has_permission(user, "ticket:view_own"):
+            return user_id in (ticket_requester_id, assigned_id)
+        return False
     if has_permission(role, "ticket:view_all"):
         return True
     if has_permission(role, "ticket:view_own"):

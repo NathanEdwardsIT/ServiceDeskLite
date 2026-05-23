@@ -56,6 +56,10 @@ def ad_console(
             }
         )
 
+    org_chart = svc.get_org_chart()
+    departments = svc.department_breakdown()
+    ad_audit = svc.get_ad_audit_logs(50)
+
     return templates.TemplateResponse(
         request,
         "ad_console.html",
@@ -77,8 +81,133 @@ def ad_console(
             "roles": [r.value for r in UserRole],
             "script_config_json": json.dumps(script_config),
             "perm_matrix": perm_matrix,
+            "org_chart_json": json.dumps(org_chart),
+            "departments": departments,
+            "ad_audit": ad_audit,
         },
     )
+
+
+@router.get("/org-chart")
+def org_chart_api(current: User = Depends(require_login), db: Session = Depends(get_db)):
+    require_permission(current, "ad:view", db)
+    return ADManagementService(db).get_org_chart()
+
+
+@router.get("/departments")
+def departments_api(current: User = Depends(require_login), db: Session = Depends(get_db)):
+    require_permission(current, "ad:view", db)
+    return ADManagementService(db).department_breakdown()
+
+
+@router.get("/audit")
+def ad_audit_api(
+    current: User = Depends(require_login),
+    db: Session = Depends(get_db),
+    limit: int = 100,
+):
+    require_permission(current, "ad:view", db)
+    logs = ADManagementService(db).get_ad_audit_logs(limit)
+    return [
+        {
+            "id": log.id,
+            "action": log.action,
+            "entity_type": log.entity_type,
+            "entity_id": log.entity_id,
+            "summary": log.summary,
+            "severity": log.severity,
+            "created_at": log.created_at.isoformat() if log.created_at else None,
+            "actor": log.actor.display_name if log.actor else "System",
+        }
+        for log in logs
+    ]
+
+
+@router.get("/search/advanced")
+def advanced_search(
+    q: str = "",
+    department: str = "",
+    role: str = "",
+    group_id: int | None = None,
+    active_only: bool = True,
+    locked_only: bool = False,
+    current: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    require_permission(current, "ad:view", db)
+    svc = ADManagementService(db)
+    users = svc.advanced_search(
+        query=q or None,
+        department=department or None,
+        role=role or None,
+        group_id=group_id,
+        active_only=active_only,
+        locked_only=locked_only,
+    )
+    return [svc.user_to_dict(u) for u in users]
+
+
+@router.post("/users/bulk/active")
+def bulk_set_active(
+    current: User = Depends(require_login),
+    db: Session = Depends(get_db),
+    user_ids: str = Form(...),
+    is_active: bool = Form(True),
+):
+    require_permission(current, "ad:manage", db)
+    ids = [int(x) for x in user_ids.split(",") if x.strip().isdigit()]
+    count = ADManagementService(db).bulk_set_active(ids, is_active)
+    AuditService(db).log(
+        AuditAction.UPDATE,
+        "ad_directory",
+        None,
+        current.id,
+        {"bulk_active": is_active, "count": count},
+    )
+    db.commit()
+    return RedirectResponse(f"/ad?tab=users&synced={count}", status_code=303)
+
+
+@router.post("/users/bulk/group")
+def bulk_add_group(
+    current: User = Depends(require_login),
+    db: Session = Depends(get_db),
+    user_ids: str = Form(...),
+    group_id: int = Form(...),
+):
+    require_permission(current, "ad:manage", db)
+    ids = [int(x) for x in user_ids.split(",") if x.strip().isdigit()]
+    count = ADManagementService(db).bulk_add_to_group(ids, group_id)
+    AuditService(db).log(
+        AuditAction.UPDATE,
+        "ad_directory",
+        None,
+        current.id,
+        {"bulk_add_group": group_id, "count": count},
+    )
+    db.commit()
+    return RedirectResponse(f"/ad?tab=users&synced={count}", status_code=303)
+
+
+@router.post("/users/{user_id}/lock")
+def lock_user(
+    user_id: int,
+    current: User = Depends(require_login),
+    db: Session = Depends(get_db),
+    locked: bool = Form(True),
+):
+    require_permission(current, "ad:manage", db)
+    svc = ADManagementService(db)
+    svc.set_account_locked(user_id, locked)
+    AuditService(db).log(
+        AuditAction.UPDATE,
+        "ad_user",
+        user_id,
+        current.id,
+        {"account_locked": locked},
+    )
+    db.commit()
+    return RedirectResponse(f"/ad?tab=users&selected={user_id}", status_code=303)
 
 
 @router.get("/search")

@@ -90,6 +90,7 @@ h2 { margin: 1.5rem 0 0.75rem; font-size: 1.1rem; }
 .priority-low { background: #1f2937; color: #9ca3af; }
 .status-new, .status-open { background: #1e40af; color: #bfdbfe; }
 .status-in_progress { background: #4c1d95; color: #ddd6fe; }
+.status-pending { background: #78350f; color: #fde68a; }
 .status-resolved, .status-closed { background: #14532d; color: #bbf7d0; }
 .sla-on_track { color: var(--success); }
 .sla-at_risk, .sla-breached { color: var(--danger); }

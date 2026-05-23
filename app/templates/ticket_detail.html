@@ -1,13 +1,15 @@
 {% extends "base.html" %}
 {% block title %}{{ ticket.ticket_number }}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/static/css/tickets.css">{% endblock %}
 {% block content %}
 <div class="ticket-header">
   <h1>{{ ticket.ticket_number }} — {{ ticket.title }}</h1>
   <div class="badges">
     <span class="badge">{{ ticket.ticket_type }}</span>
     <span class="badge priority-{{ ticket.priority }}">{{ ticket.priority }}</span>
-    <span class="badge">impact: {{ ticket.impact }}</span>
-    <span class="badge status-{{ ticket.status }}">{{ ticket.status }}</span>
+    <span class="badge">impact: {{ ticket.impact }} · urgency: {{ ticket.urgency }}</span>
+    <span class="badge status-{{ ticket.status }}">{{ ticket.status|replace('_',' ') }}</span>
+    {% if ticket.escalation_level %}<span class="badge esc-level">Escalation L{{ ticket.escalation_level }}</span>{% endif %}
     {% if ticket.tags %}<span class="badge">{{ ticket.tags }}</span>{% endif %}
     {% if sla_display %}
     <span class="badge sla-{{ sla_display.status }}">SLA: {{ sla_display.label }} ({{ sla_display.percent_remaining }}% left)</span>
@@ -25,27 +27,66 @@
     <p><strong>Device:</strong> <a href="/devices/{{ ticket.affected_device.id }}">{{ ticket.affected_device.hostname }}</a></p>
     {% endif %}
 
-    {% if user.role in ['technician', 'team_lead', 'admin'] %}
-    <h3>Update Status</h3>
-    <form method="post" action="/tickets/{{ ticket.id }}/status" class="inline-form">
-      <select name="new_status">
-        {% for s in statuses %}
-        <option value="{{ s }}" {% if s == ticket.status %}selected{% endif %}>{{ s }}</option>
-        {% endfor %}
-      </select>
-      <input type="text" name="note" placeholder="Status note">
-      <button type="submit" class="btn">Update</button>
-    </form>
+    {% if can_update %}
+    <div class="panel workflow-panel" style="margin-top:1rem">
+      <h3>Workflow — Update Status</h3>
+      <p class="muted small">Only valid ITIL transitions are allowed from <strong>{{ current_status|replace('_',' ') }}</strong></p>
+      <form method="post" action="/tickets/{{ ticket.id }}/status" class="inline-form">
+        <select name="new_status" required>
+          <option value="{{ current_status }}" selected>{{ current_status|replace('_',' ') }} (current)</option>
+          {% for s in allowed_statuses %}
+          <option value="{{ s }}">{{ s|replace('_',' ') }}</option>
+          {% endfor %}
+        </select>
+        <input type="text" name="note" placeholder="Required for some transitions">
+        <button type="submit" class="btn btn-primary">Update Status</button>
+      </form>
+    </div>
 
+    {% if can_escalate and ticket.status not in ['resolved','closed','cancelled'] %}
+    <div class="panel escalation-panel" style="margin-top:1rem">
+      <h3>Escalate Ticket</h3>
+      <form method="post" action="/tickets/{{ ticket.id }}/escalate" class="inline-form">
+        <input type="text" name="reason" placeholder="Escalation reason (required)" required style="flex:1">
+        <button type="submit" class="btn btn-danger">Escalate (+1 level)</button>
+      </form>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if can_assign %}
     <h3>Assign Technician</h3>
     <form method="post" action="/tickets/{{ ticket.id }}/assign" class="inline-form">
       <select name="technician_id">
         {% for tech in technicians %}
-        <option value="{{ tech.id }}">{{ tech.display_name }}</option>
+        <option value="{{ tech.id }}" {% if ticket.assigned_technician_id == tech.id %}selected{% endif %}>{{ tech.display_name }}</option>
         {% endfor %}
       </select>
       <button type="submit" class="btn">Assign</button>
     </form>
+    {% endif %}
+
+    {% if is_requester and ticket.status in ['resolved','closed'] and not ticket.satisfaction_rating %}
+    <div class="panel csat-panel" style="margin-top:1rem">
+      <h3>Rate Your Support Experience</h3>
+      <form method="post" action="/tickets/{{ ticket.id }}/satisfaction">
+        <label>Rating (1–5)</label>
+        <select name="rating" required>
+          <option value="5">5 — Excellent</option>
+          <option value="4">4 — Good</option>
+          <option value="3">3 — Average</option>
+          <option value="2">2 — Poor</option>
+          <option value="1">1 — Unacceptable</option>
+        </select>
+        <label>Comments (optional)</label>
+        <textarea name="comment" rows="2"></textarea>
+        <button type="submit" class="btn btn-primary">Submit Feedback</button>
+      </form>
+    </div>
+    {% elif ticket.satisfaction_rating %}
+    <p class="muted" style="margin-top:1rem">Customer satisfaction: <strong>{{ ticket.satisfaction_rating }}/5</strong>
+      {% if ticket.satisfaction_comment %} — {{ ticket.satisfaction_comment }}{% endif %}
+    </p>
     {% endif %}
   </section>
 
@@ -146,7 +187,7 @@
   {% else %}
   <p>No work notes yet.</p>
   {% endfor %}
-  {% if user.role in ['technician', 'team_lead', 'admin'] %}
+  {% if can_work_note %}
   <form method="post" action="/tickets/{{ ticket.id }}/work-note">
     <select name="note_type">
       <option value="investigation">Investigation</option>
@@ -171,7 +212,7 @@
   <p>{{ ticket.resolution_doc.prevention_notes }}</p>
   {% endif %}
 </section>
-{% elif user.role in ['technician', 'team_lead', 'admin'] and ticket.status not in ['resolved', 'closed', 'cancelled'] %}
+{% elif can_resolve and ticket.status not in ['resolved', 'closed', 'cancelled'] %}
 <section class="panel">
   <h2>Resolve with Documentation</h2>
   <form method="post" action="/tickets/{{ ticket.id }}/resolve">

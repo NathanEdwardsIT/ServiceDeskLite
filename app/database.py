@@ -61,6 +61,12 @@ def migrate_schema():
         ("audit_logs", "summary", "VARCHAR(512)"),
         ("audit_logs", "severity", "VARCHAR(16) DEFAULT 'info'"),
         ("audit_logs", "request_path", "VARCHAR(255)"),
+        ("users", "last_login_at", "DATETIME"),
+        ("users", "account_locked", "BOOLEAN DEFAULT 0"),
+        ("tickets", "escalation_level", "INTEGER DEFAULT 0"),
+        ("tickets", "escalated_at", "DATETIME"),
+        ("tickets", "satisfaction_rating", "INTEGER"),
+        ("tickets", "satisfaction_comment", "TEXT"),
     ]
     with engine.begin() as conn:
         for table, column, col_type in column_migrations:

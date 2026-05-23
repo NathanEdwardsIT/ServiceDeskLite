@@ -2,6 +2,15 @@
 
 A portfolio-ready Python help desk / IT ticketing platform built to demonstrate systems thinking, documentation practices, and common enterprise IT workflows—including an **Active Directory simulation** with a full directory administration console.
 
+## Screenshots
+
+<img width="1632" height="875" alt="image" src="https://github.com/user-attachments/assets/bfd271a2-3e0d-4eff-bf56-9c0a89acc602" />
+<img width="1638" height="680" alt="image" src="https://github.com/user-attachments/assets/33c56b37-df49-4ba2-a8ec-11a9bb141253" />
+<img width="1609" height="798" alt="image" src="https://github.com/user-attachments/assets/27fe9e83-f7fc-4354-b4a9-f41fcf6a9433" />
+<img width="1443" height="764" alt="image" src="https://github.com/user-attachments/assets/d1bb2da1-143b-46f2-998a-48b8db6e930f" />
+<img width="1313" height="763" alt="image" src="https://github.com/user-attachments/assets/7072a43e-f3a4-4da8-8267-019536757797" />
+
+
 ## Features
 
 | Area | Capabilities |
